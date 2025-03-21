@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC Manual Offer/Answer</title>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .input-container {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        textarea {
+            width: 100%;
+            max-width: 600px;
+            height: 100px;
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.375rem; /* Rounded corners using Tailwind's scale */
+            resize: none;
+            font-family: 'Inter', sans-serif;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 0.375rem; /* Rounded corners using Tailwind's scale */
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s ease;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #2563eb;
+        }
+        #localVideo, #remoteVideo {
+            max-width: 600px;
+            margin: 20px auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.375rem; /* Rounded corners using Tailwind's scale */
+            background-color: #f9fafb; /* Light background for video */
+        }
+        .video-container {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        @media (max-width: 640px) {
+            .container {
+                padding: 10px;
+            }
+            .video-container {
+                flex-direction: column;
+                align-items: center;
+            }
+            #localVideo, #remoteVideo {
+                width: 100%;
+                max-width: 400px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="container bg-white rounded-lg shadow-md p-6">
+        <h1 class="text-2xl font-semibold text-blue-600 mb-4">WebRTC: Manual Offer/Answer</h1>
+        <p class="text-gray-700 mb-4">
+            This example demonstrates WebRTC peer connection setup by manually creating an offer and answer.
+            Open this page in two browser windows.  In one, click "Create Offer" and copy the output.
+            In the other, paste the offer into the "Remote Offer/Answer" text area and click "Set Remote Offer" and then "Create Answer" and copy that output.
+            Finally, paste the answer back into the first window's "Remote Offer/Answer" text area and click "Set Remote Answer".
+        </p>
+
+        <div class="video-container">
+            <video id="localVideo" muted autoplay playsinline class="rounded-md"></video>
+            <video id="remoteVideo" autoplay playsinline class="rounded-md"></video>
+        </div>
+
+        <div class="input-container">
+            <textarea id="remoteOfferAnswer" placeholder="Paste Offer/Answer here" class="text-gray-700"></textarea>
+            <div class="flex flex-wrap justify-center">
+                <button id="createOffer" class="bg-blue-500 hover:bg-blue-700 text-white font-semibold rounded-md py-2 px-4 focus:outline-none focus:shadow-outline">Create Offer</button>
+                <button id="setRemoteOffer" class="bg-green-500 hover:bg-green-700 text-white font-semibold rounded-md py-2 px-4 focus:outline-none focus:shadow-outline">Set Remote Offer</button>
+                <button id="createAnswer" class="bg-purple-500 hover:bg-purple-700 text-white font-semibold rounded-md py-2 px-4 focus:outline-none focus:shadow-outline">Create Answer</button>
+                <button id="setRemoteAnswer" class="bg-indigo-500 hover:bg-indigo-700 text-white font-semibold rounded-md py-2 px-4 focus:outline-none focus:shadow-outline">Set Remote Answer</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const createOfferButton = document.getElementById('createOffer');
+        const setRemoteOfferButton = document.getElementById('setRemoteOffer');
+        const createAnswerButton = document.getElementById('createAnswer');
+        const setRemoteAnswerButton = document.getElementById('setRemoteAnswer');
+        const remoteOfferAnswerInput = document.getElementById('remoteOfferAnswer');
+
+        let localPeerConnection;
+        let remotePeerConnection;
+        let localStream;
+
+        const iceCandidates = {
+            local: [],
+            remote: []
+        };
+
+        async function startLocalStream() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localStream = stream;
+                localVideo.srcObject = stream;
+            } catch (error) {
+                console.error('Error accessing media devices:', error);
+                alert('Failed to access camera and microphone. Please make sure they are enabled and try again.');
+            }
+        }
+
+        function createPeerConnection(type) {
+            const pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                ]
+            });
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    console.log(`${type} ICE candidate:`, event.candidate);
+                    if (type === 'local') {
+                        iceCandidates.local.push(event.candidate);
+                    } else {
+                        iceCandidates.remote.push(event.candidate);
+                    }
+                }
+            };
+
+            pc.ontrack = (event) => {
+                console.log(`${type} track added`);
+                if (type === 'remote') {
+                    remoteVideo.srcObject = event.streams[0];
+                }
+            };
+
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+            }
+
+            return pc;
+        }
+
+        async function createOffer() {
+            localPeerConnection = createPeerConnection('local');
+            remotePeerConnection = createPeerConnection('remote');
+
+            // Forward ICE candidates
+            localPeerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    remotePeerConnection.addIceCandidate(event.candidate).catch(e => console.error("Error adding remote ICE candidate", e));
+                }
+            };
+            remotePeerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    localPeerConnection.addIceCandidate(event.candidate).catch(e => console.error("Error adding local ICE candidate", e));
+                }
+            };
+
+
+            try {
+                const offer = await localPeerConnection.createOffer();
+                await localPeerConnection.setLocalDescription(offer);
+                remoteOfferAnswerInput.value = JSON.stringify(offer);
+                console.log('Offer created:', offer);
+            } catch (error) {
+                console.error('Error creating offer:', error);
+                alert('Error creating offer. Check console for details.');
+            }
+        }
+
+        async function setRemoteOffer() {
+            try {
+                const offer = JSON.parse(remoteOfferAnswerInput.value);
+                if (!remotePeerConnection) {
+                    remotePeerConnection = createPeerConnection('remote');
+                     // Forward ICE candidates
+                    localPeerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            remotePeerConnection.addIceCandidate(event.candidate).catch(e => console.error("Error adding remote ICE candidate", e));
+                        }
+                    };
+                    remotePeerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            localPeerConnection.addIceCandidate(event.candidate).catch(e => console.error("Error adding local ICE candidate", e));
+                        }
+                    };
+                }
+                await remotePeerConnection.setRemoteDescription(offer);
+                console.log('Remote offer set:', offer);
+            } catch (error) {
+                console.error('Error setting remote offer:', error);
+                alert('Error setting remote offer.  Check console and ensure the offer is valid JSON.');
+            }
+        }
+
+        async function createAnswer() {
+            if (!remotePeerConnection || !remotePeerConnection.remoteDescription) {
+                alert('Please set the remote offer first.');
+                return;
+            }
+            localPeerConnection = createPeerConnection('local');
+
+             // Forward ICE candidates
+            localPeerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    remotePeerConnection.addIceCandidate(event.candidate).catch(e => console.error("Error adding remote ICE candidate", e));
+                }
+            };
+            remotePeerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    localPeerConnection.addIceCandidate(event.candidate).catch(e => console.error("Error adding local ICE candidate", e));
+                }
+            };
+
+            try {
+                const answer = await localPeerConnection.createAnswer();
+                await localPeerConnection.setLocalDescription(answer);
+                remoteOfferAnswerInput.value = JSON.stringify(answer);
+                console.log('Answer created:', answer);
+            } catch (error) {
+                console.error('Error creating answer:', error);
+                alert('Error creating answer. Check console for details.');
+            }
+        }
+
+        async function setRemoteAnswer() {
+            try {
+                const answer = JSON.parse(remoteOfferAnswerInput.value);
+                if (!remotePeerConnection) {
+                      remotePeerConnection = createPeerConnection('remote');
+                       // Forward ICE candidates
+                    localPeerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            remotePeerConnection.addIceCandidate(event.candidate).catch(e => console.error("Error adding remote ICE candidate", e));
+                        }
+                    };
+                    remotePeerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            localPeerConnection.addIceCandidate(event.candidate).catch(e => console.error("Error adding local ICE candidate", e));
+                        }
+                    };
+                }
+                await remotePeerConnection.setRemoteDescription(answer);
+                console.log('Remote answer set:', answer);
+            } catch (error) {
+                console.error('Error setting remote answer:', error);
+                alert('Error setting remote answer. Check console and ensure the answer is valid JSON.');
+            }
+        }
+
+        startLocalStream();
+        createOfferButton.addEventListener('click', createOffer);
+        setRemoteOfferButton.addEventListener('click', setRemoteOffer);
+        createAnswerButton.addEventListener('click', createAnswer);
+        setRemoteAnswerButton.addEventListener('click', setRemoteAnswer);
+    </script>
+</body>
+</html>
